@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Analysis Dashboard</title>
     
-    <!-- SheetJS for Excel processing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
     <style>
         * {
             margin: 0;
@@ -19,6 +16,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f8f9fa;
             color: #333;
+            line-height: 1.6;
         }
         
         .container {
@@ -209,6 +207,7 @@
             width: 120px;
             font-size: 12px;
             color: #666;
+            flex-shrink: 0;
         }
         
         .chart-bar-fill {
@@ -221,6 +220,7 @@
             color: white;
             font-size: 12px;
             font-weight: 500;
+            min-width: 60px;
         }
         
         .file-list {
@@ -251,6 +251,22 @@
             margin: 10px 0;
         }
         
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .info {
+            background: #cce7ff;
+            color: #004085;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
         .hidden {
             display: none;
         }
@@ -268,6 +284,15 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        
+        .debug-info {
+            background: #f1f3f4;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            margin: 10px 0;
         }
         
         @media (max-width: 768px) {
@@ -292,6 +317,11 @@
             <p>Upload Excel files to analyze payment data</p>
         </div>
         
+        <div id="systemCheck" class="info">
+            <h3>System Check</h3>
+            <div id="systemStatus">Checking system...</div>
+        </div>
+        
         <div class="card">
             <h2>📤 Upload Files</h2>
             <div class="upload-area" id="uploadArea">
@@ -309,6 +339,8 @@
         </div>
         
         <div id="errorMessage" class="error hidden"></div>
+        <div id="successMessage" class="success hidden"></div>
+        <div id="debugInfo" class="debug-info hidden"></div>
         
         <div id="dashboardContent" class="hidden">
             <div class="stats-grid">
@@ -384,41 +416,126 @@
         </div>
     </div>
 
+    <!-- Multiple CDN fallbacks for SheetJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script>
+        // If first CDN fails, try backup
+        if (typeof XLSX === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');
+        }
+    </script>
+    
+    <script>
+        // Global variables
         let allPayments = [];
         let filteredPayments = [];
         let uploadedFiles = [];
+        let systemReady = false;
 
-        // Initialize
-        document.getElementById('fileInput').addEventListener('change', handleFileUpload);
-        document.getElementById('uploadArea').addEventListener('click', () => {
-            document.getElementById('fileInput').click();
-        });
-        
-        // Add event listeners for filters
-        document.getElementById('beneficiarySelect').addEventListener('change', applyFilters);
-        document.getElementById('startDate').addEventListener('change', applyFilters);
-        document.getElementById('endDate').addEventListener('change', applyFilters);
-        document.getElementById('searchTerm').addEventListener('input', applyFilters);
+        // Debug function
+        function debug(message) {
+            console.log(message);
+            const debugInfo = document.getElementById('debugInfo');
+            debugInfo.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+            debugInfo.classList.remove('hidden');
+        }
 
-        // Drag and drop support
-        document.getElementById('uploadArea').addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.currentTarget.classList.add('dragover');
-        });
-        
-        document.getElementById('uploadArea').addEventListener('dragleave', (e) => {
-            e.currentTarget.classList.remove('dragover');
-        });
-        
-        document.getElementById('uploadArea').addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.currentTarget.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            handleFileUpload({ target: { files } });
-        });
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+            debug('ERROR: ' + message);
+        }
 
+        // Show success message
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.classList.remove('hidden');
+            setTimeout(() => {
+                successDiv.classList.add('hidden');
+            }, 3000);
+        }
+
+        // System check
+        function checkSystem() {
+            const statusDiv = document.getElementById('systemStatus');
+            const systemCheckDiv = document.getElementById('systemCheck');
+            
+            let status = '✅ Browser: ' + navigator.userAgent.split(' ')[0] + '<br>';
+            
+            // Check if XLSX is loaded
+            if (typeof XLSX !== 'undefined') {
+                status += '✅ Excel processing library loaded<br>';
+                systemReady = true;
+            } else {
+                status += '❌ Excel processing library failed to load<br>';
+                status += '⚠️ Please refresh the page or try a different browser<br>';
+            }
+            
+            // Check File API support
+            if (window.File && window.FileReader && window.FileList && window.Blob) {
+                status += '✅ File upload supported<br>';
+            } else {
+                status += '❌ File upload not supported in this browser<br>';
+            }
+            
+            statusDiv.innerHTML = status;
+            
+            if (systemReady) {
+                systemCheckDiv.classList.remove('info');
+                systemCheckDiv.classList.add('success');
+                setTimeout(() => {
+                    systemCheckDiv.classList.add('hidden');
+                    initializeApp();
+                }, 2000);
+            } else {
+                systemCheckDiv.classList.remove('info');
+                systemCheckDiv.classList.add('error');
+            }
+        }
+
+        // Initialize the app
+        function initializeApp() {
+            debug('Initializing app...');
+            
+            // Initialize event listeners
+            document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+            document.getElementById('uploadArea').addEventListener('click', () => {
+                document.getElementById('fileInput').click();
+            });
+            
+            // Add event listeners for filters
+            document.getElementById('beneficiarySelect').addEventListener('change', applyFilters);
+            document.getElementById('startDate').addEventListener('change', applyFilters);
+            document.getElementById('endDate').addEventListener('change', applyFilters);
+            document.getElementById('searchTerm').addEventListener('input', applyFilters);
+
+            // Drag and drop support
+            document.getElementById('uploadArea').addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.currentTarget.classList.add('dragover');
+            });
+            
+            document.getElementById('uploadArea').addEventListener('dragleave', (e) => {
+                e.currentTarget.classList.remove('dragover');
+            });
+            
+            document.getElementById('uploadArea').addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                handleFileUpload({ target: { files } });
+            });
+
+            debug('App initialized successfully');
+        }
+
+        // Handle file upload
         async function handleFileUpload(event) {
+            debug('Starting file upload...');
+            
             const files = Array.from(event.target.files);
             const uploadText = document.getElementById('uploadText');
             const uploadLoading = document.getElementById('uploadLoading');
@@ -428,17 +545,27 @@
             uploadLoading.classList.remove('hidden');
             errorMessage.classList.add('hidden');
             
+            debug(`Processing ${files.length} files`);
+            
             try {
                 const newPayments = [];
+                let processedFiles = 0;
                 
                 for (const file of files) {
+                    debug(`Processing file: ${file.name}`);
+                    
                     const data = await file.arrayBuffer();
-                    const workbook = XLSX.read(data);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    debug(`Workbook sheets: ${workbook.SheetNames.join(', ')}`);
                     
                     for (const sheetName of workbook.SheetNames) {
                         const worksheet = workbook.Sheets[sheetName];
                         const jsonData = XLSX.utils.sheet_to_json(worksheet);
                         
+                        debug(`Sheet ${sheetName} has ${jsonData.length} rows`);
+                        
+                        let validRows = 0;
                         jsonData.forEach(row => {
                             if (row.BNF_NAME && row.AMOUNT && row.PYMT_DATE) {
                                 // Parse Indian date format (DD-MM-YYYY)
@@ -467,23 +594,31 @@
                                         ifscCode: row.BENE_IFSC || '',
                                         fileName: file.name
                                     });
+                                    validRows++;
                                 }
                             }
                         });
+                        
+                        debug(`Found ${validRows} valid payment records in sheet ${sheetName}`);
                     }
+                    processedFiles++;
                 }
                 
                 allPayments = [...allPayments, ...newPayments];
                 filteredPayments = [...allPayments];
                 uploadedFiles = [...uploadedFiles, ...files.map(f => f.name)];
                 
+                debug(`Total payments loaded: ${allPayments.length}`);
+                
                 updateFileList();
                 updateBeneficiaryDropdown();
                 updateDashboard();
                 
+                showSuccess(`Successfully processed ${processedFiles} files with ${newPayments.length} payment records`);
+                
             } catch (error) {
-                errorMessage.textContent = 'Error processing files: ' + error.message;
-                errorMessage.classList.remove('hidden');
+                showError('Error processing files: ' + error.message);
+                debug('Upload error: ' + error.stack);
             }
             
             uploadText.classList.remove('hidden');
@@ -491,6 +626,7 @@
             event.target.value = '';
         }
 
+        // Update file list
         function updateFileList() {
             const fileList = document.getElementById('fileList');
             if (uploadedFiles.length > 0) {
@@ -501,6 +637,7 @@
             }
         }
 
+        // Update beneficiary dropdown
         function updateBeneficiaryDropdown() {
             const select = document.getElementById('beneficiarySelect');
             const beneficiaries = [...new Set(allPayments.map(p => p.beneficiaryName))].sort();
@@ -512,8 +649,11 @@
                 option.textContent = name;
                 select.appendChild(option);
             });
+            
+            debug(`Beneficiary dropdown updated with ${beneficiaries.length} options`);
         }
 
+        // Apply filters
         function applyFilters() {
             const beneficiary = document.getElementById('beneficiarySelect').value;
             const startDate = document.getElementById('startDate').value;
@@ -542,9 +682,11 @@
                 return true;
             });
             
+            debug(`Filters applied: ${filteredPayments.length} records match criteria`);
             updateDashboard();
         }
 
+        // Update dashboard
         function updateDashboard() {
             if (allPayments.length === 0) return;
             
@@ -564,8 +706,11 @@
             // Update charts
             updateMonthlyChart();
             updateBeneficiaryTable();
+            
+            debug('Dashboard updated successfully');
         }
 
+        // Update monthly chart
         function updateMonthlyChart() {
             const monthlyData = {};
             
@@ -581,14 +726,19 @@
                 monthlyData[monthKey] += payment.amount;
             });
             
-            const sortedData = Object.entries(monthlyData).sort((a, b) => new Date(a[0]) - new Date(b[0]));
+            const sortedData = Object.entries(monthlyData).sort((a, b) => new Date(a[0] + ' 1') - new Date(b[0] + ' 1'));
             const maxAmount = Math.max(...sortedData.map(([, amount]) => amount));
             
             const chartContainer = document.getElementById('monthlyChart');
             chartContainer.innerHTML = '';
             
+            if (sortedData.length === 0) {
+                chartContainer.innerHTML = '<p style="color: #666;">No data to display</p>';
+                return;
+            }
+            
             sortedData.forEach(([month, amount]) => {
-                const percentage = (amount / maxAmount) * 100;
+                const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
                 const bar = document.createElement('div');
                 bar.className = 'chart-bar';
                 bar.innerHTML = `
@@ -601,6 +751,7 @@
             });
         }
 
+        // Update beneficiary table
         function updateBeneficiaryTable() {
             const beneficiaryData = {};
             
@@ -639,64 +790,89 @@
             });
         }
 
+        // Download CSV
         function downloadCSV() {
-            const headers = ['Beneficiary Name', 'Amount (Rs)', 'Payment Date', 'Payment Mode', 'Credit Narrative', 'Account Number', 'IFSC Code', 'File Source'];
-            
-            const csvContent = [
-                headers.join(','),
-                ...filteredPayments.map(p => [
-                    `"${p.beneficiaryName}"`,
-                    p.amount,
-                    p.paymentDate.toLocaleDateString('en-IN'),
-                    `"${p.paymentMode}"`,
-                    `"${p.creditNarrative}"`,
-                    `"${p.accountNumber}"`,
-                    `"${p.ifscCode}"`,
-                    `"${p.fileName}"`
-                ].join(','))
-            ].join('\n');
+            try {
+                const headers = ['Beneficiary Name', 'Amount (Rs)', 'Payment Date', 'Payment Mode', 'Credit Narrative', 'Account Number', 'IFSC Code', 'File Source'];
+                
+                const csvContent = [
+                    headers.join(','),
+                    ...filteredPayments.map(p => [
+                        `"${p.beneficiaryName}"`,
+                        p.amount,
+                        p.paymentDate.toLocaleDateString('en-IN'),
+                        `"${p.paymentMode}"`,
+                        `"${p.creditNarrative}"`,
+                        `"${p.accountNumber}"`,
+                        `"${p.ifscCode}"`,
+                        `"${p.fileName}"`
+                    ].join(','))
+                ].join('\n');
 
-            const blob = new Blob([csvContent], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `payment_analysis_${new Date().toISOString().split('T')[0]}.csv`;
-            a.click();
-            window.URL.revokeObjectURL(url);
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `payment_analysis_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+                
+                showSuccess('CSV download started successfully');
+            } catch (error) {
+                showError('Error downloading CSV: ' + error.message);
+            }
         }
 
+        // Download Excel
         function downloadExcel() {
-            const wb = XLSX.utils.book_new();
-            
-            // Summary sheet
-            const beneficiaryData = {};
-            filteredPayments.forEach(payment => {
-                if (!beneficiaryData[payment.beneficiaryName]) {
-                    beneficiaryData[payment.beneficiaryName] = {
-                        totalAmount: 0,
-                        transactionCount: 0,
-                        lastPayment: payment.paymentDate
-                    };
-                }
-                beneficiaryData[payment.beneficiaryName].totalAmount += payment.amount;
-                beneficiaryData[payment.beneficiaryName].transactionCount += 1;
-                if (payment.paymentDate > beneficiaryData[payment.beneficiaryName].lastPayment) {
-                    beneficiaryData[payment.beneficiaryName].lastPayment = payment.paymentDate;
-                }
-            });
-            
-            const summaryData = Object.entries(beneficiaryData).map(([name, data]) => ({
-                'Beneficiary Name': name,
-                'Total Amount (Rs)': data.totalAmount,
-                'Transaction Count': data.transactionCount,
-                'Last Payment Date': data.lastPayment.toLocaleDateString('en-IN')
-            }));
-            
-            const summaryWS = XLSX.utils.json_to_sheet(summaryData);
-            XLSX.utils.book_append_sheet(wb, summaryWS, 'Summary');
-            
-            XLSX.writeFile(wb, `payment_summary_${new Date().toISOString().split('T')[0]}.xlsx`);
+            try {
+                const wb = XLSX.utils.book_new();
+                
+                // Summary sheet
+                const beneficiaryData = {};
+                filteredPayments.forEach(payment => {
+                    if (!beneficiaryData[payment.beneficiaryName]) {
+                        beneficiaryData[payment.beneficiaryName] = {
+                            totalAmount: 0,
+                            transactionCount: 0,
+                            lastPayment: payment.paymentDate
+                        };
+                    }
+                    beneficiaryData[payment.beneficiaryName].totalAmount += payment.amount;
+                    beneficiaryData[payment.beneficiaryName].transactionCount += 1;
+                    if (payment.paymentDate > beneficiaryData[payment.beneficiaryName].lastPayment) {
+                        beneficiaryData[payment.beneficiaryName].lastPayment = payment.paymentDate;
+                    }
+                });
+                
+                const summaryData = Object.entries(beneficiaryData).map(([name, data]) => ({
+                    'Beneficiary Name': name,
+                    'Total Amount (Rs)': data.totalAmount,
+                    'Transaction Count': data.transactionCount,
+                    'Last Payment Date': data.lastPayment.toLocaleDateString('en-IN')
+                }));
+                
+                const summaryWS = XLSX.utils.json_to_sheet(summaryData);
+                XLSX.utils.book_append_sheet(wb, summaryWS, 'Summary');
+                
+                XLSX.writeFile(wb, `payment_summary_${new Date().toISOString().split('T')[0]}.xlsx`);
+                
+                showSuccess('Excel download started successfully');
+            } catch (error) {
+                showError('Error downloading Excel: ' + error.message);
+            }
         }
+
+        // Start the application when page loads
+        window.addEventListener('load', () => {
+            debug('Page loaded, starting system check...');
+            setTimeout(checkSystem, 1000);
+        });
+
+        // Handle any uncaught errors
+        window.addEventListener('error', (event) => {
+            showError('JavaScript error: ' + event.message);
+        });
     </script>
 </body>
 </html>
